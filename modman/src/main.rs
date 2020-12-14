@@ -1,8 +1,11 @@
 use slog::*;
-use std::{error::Error, time::Duration};
 use smithay::backend::egl::EGLGraphicsBackend;
+use smithay::backend::graphics::gl::GLGraphicsBackend;
 use smithay::backend::input::{InputBackend, InputEvent};
 use smithay::reexports::calloop::*;
+use std::time::Duration;
+
+mod drawer;
 
 #[derive(Debug)]
 struct ModmanState {}
@@ -25,24 +28,48 @@ fn main() -> std::result::Result<(), Box<dyn std::error::Error>> {
 
     let display = wayland_server::Display::new();
 
-    let egl_reader = graphics_backend
+    let egl_buffer_reader = graphics_backend
         .bind_wl_display(&display)
         .map_err(|e| {
             crit!(logger, "{}", e);
         })
         .expect("Could not bind wayland display.");
 
+
+
+    info!(
+        logger,
+        "FRAMEBUFFER DIMENSIONS: {:?}",
+        graphics_backend.get_framebuffer_dimensions()
+    );
+    
+    // TODO move this to a gl module
+    let drawer = {
+        let display: smithay::backend::graphics::glium::GliumGraphicsBackend<_> = graphics_backend.into();
+        display
+    };
+
     let cloned_log = logger.clone();
-    let mut state = ModmanState{};
-    event_loop.run(Some(Duration::from_secs(1)), &mut state, move |data| {
+    let mut state = ModmanState {};
+    let signal = event_loop.get_signal();
+    if let Err(e) = event_loop.run(Some(Duration::from_millis(50)), &mut state, move |data| {
         info!(cloned_log, "{:?}", data);
-        input_backend.dispatch_new_events(|event, input_config| {
-            match event {
-                InputEvent::Keyboard { seat, event } => { info!(cloned_log, "SEAT: {:?}\nEVENT: {:?}", seat, event); }
-                _ => {info!(cloned_log, "Unhandled input event.")}
+        if let Err(e) = input_backend.dispatch_new_events(|event, _input_config| match event {
+            InputEvent::Keyboard { seat, event } => {
+                info!(cloned_log, "SEAT: {:?}\nEVENT: {:?}", seat, event);
             }
-        }).expect("Failed to finish running event loop.");
-    }).map_err(|e| info!(logger, "{}", e)).expect("Error running event loop.");
+            _ => {}
+        }) {
+            error!(cloned_log, "{}", e);
+            signal.stop();
+        }
+    
+        // set the clear-color of the window
+        drawer.borrow().swap_buffers().unwrap();
+
+    }) {
+        error!(logger, "{}", e);
+    }
 
     info!(logger, "Thank you for using modman.");
     Ok(())

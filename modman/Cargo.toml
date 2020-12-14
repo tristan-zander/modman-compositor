@@ -10,6 +10,7 @@ wayland-server = { version = "0.28.2" }
 slog = { version = "2.5.2" }
 slog-term = { version = "2.6.0" }
 slog-async = { version = "2.5.0" }
+glium = { version =  "0.28.0" } 
 
 [dependencies.smithay]
 git = "https://github.com/Smithay/smithay.git"
